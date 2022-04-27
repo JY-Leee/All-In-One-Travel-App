@@ -13,10 +13,8 @@ def pullText(link):
         article=article+paragraph.get_text()+"\n"
     return article
 
-def getRestaurantData():
-    EXAMPLE_URL = 'https://www.viator.com/Los-Angeles-tours/Dinner-Product-Food-Wine-and-Nightlife/d645-tag21579'
-
-    request=requests.get(EXAMPLE_URL)
+def getRestaurantData(URL):
+    request=requests.get(URL)
     soup = bs4.BeautifulSoup(request.text, 'html.parser')
     res={}
     names = soup.select('div > div.col-6.col-md-6.px-0.pl-3.pr-md-1.d-flex.flex-column.justify-content-md-between > div.flex-md-1.d-flex.flex-column > h2 > a')
@@ -32,11 +30,34 @@ def getRestaurantData():
 #date is YYYY-MM-DD or YYYY-MM
 def cheapestFlight(departureAirport,arrivalAirport,departureDate,arrivalDate):
     url = "https://api.travelpayouts.com/v1/prices/cheap"
+    departureDate=departureDate[:-3]
+    arrivalDate=arrivalDate[:-3]
     querystring = {"origin":departureAirport,"destination":arrivalAirport,
     "depart_date":departureDate,"return_date":arrivalDate, "currency":"USD"}
     headers = {'x-access-token': token}
     response = requests.request("GET", url, headers=headers, params=querystring)
-    return response.text
+    result=json.loads(response.text)
+    result=result["data"]
+    theAirport=""
+    for key in result:
+        theAirport=key
+    result=result[theAirport]
+    prices=[]
+    res={}
+    for key in result:
+        dict=result[key]
+        for k in dict:
+            if k=="price":
+                prices.append(int(dict["price"]))
+    prices.sort()
+    for key in result:
+        dict=result[key]
+        for k in dict:
+            if int(dict["price"])==prices[0]:
+                res["flight number"]=dict["flight_number"]
+                res["price"]=prices[0]
+                res["airline"]=dict["airline"]
+    return res
 
 #one way flight (business or older people)
 #https://travelpayouts.github.io/slate/?python#non-stop-tickets
@@ -47,29 +68,92 @@ def oneWayFlight(departureAirport,arrivalAirport,departureDate,arrivalDate):
                 :departureDate,"return_date":arrivalDate, "currency":"USD"}
     headers = {'x-access-token': token}
     response = requests.request("GET", url, headers=headers, params=querystring)
-    return response.text
+    result=json.loads(response.text)
+    result=result["data"]
+    for key in result:
+        theAirport=key
+    result=result[theAirport]
+    prices=[]
+    res={}
+    for key in result:
+        dict=result[key]
+        for k in dict:
+            if k=="price":
+                prices.append(int(dict["price"]))
+    prices.sort()
+    for key in result:
+        dict=result[key]
+        for k in dict:
+            if int(dict["price"])==prices[0]:
+                res["flight number"]=dict["flight_number"]
+                res["price"]=prices[0]
+                res["airline"]=dict["airline"]        
+    return res 
 
-#search for hotels
-#adapted from
-# https://travelpayouts.github.io/slate/?py
-# thon#hotel-search-by-name-or-location
-#i want this to return hotelID
-def searchHotels():
-    url = "http://engine.hotellook.com/api/v2/lookup.json"
-    querystring = {"query":"huntington beach","lang":"en"
-                    ,"lookFor":"both","limit":"10","token":token}
-    header={'x-access-token': '822912f842ab681267fbb304bba55085'}
-    response = requests.request("GET", url, headers=header, params=querystring)
-    return json.loads(response.text)
-
-#finds hotel price
+  
+#finds hotel data
 #adapted from https://travelpayouts.github.io/slate/?pyth
 # on#displays-the-cost-of-living-in-hotels
-def hotelPrice():
+def hotelData(destination,checkIn,checkOut):
     url = "http://engine.hotellook.com/api/v2/cache.json"
-    querystring = {"location":"Saint-Petersburg","hotelId":"277083","checkIn":"2019-09-13"
-    ,"checkOut":"2019-09-18","currency": "USD", "limit": "1", "token":token}
+    querystring = {"location":destination,"checkIn":checkIn,"checkOut":checkOut,
+                    "currency": "USD", "limit": "8", "token":token}
     headers={'x-access-token': token}
     response = requests.request("GET", url, headers=headers, params=querystring)
-    return response.text
+    responseList=json.loads(response.text)
+    res={}
+    name=""
+    price=0
+    for dict in responseList:
+        info={}
+        for key in dict:
+            if key=="hotelName": 
+                name=dict["hotelName"]
+            if key=="priceAvg":
+                price=int(dict["priceAvg"])
+            if key=="stars":
+                star=int(dict["stars"])
+        info["price"]=price
+        info["stars"]=star
+        res[name]=info
+    return res
 
+#finds the cheapest hotel returns ('hotel name', price)
+def cheapestHotel(destination,checkIn,checkOut):
+    data=hotelData(destination,checkIn,checkOut) 
+    dict={}
+    for key in data:
+        subdict=data[key]
+        price=subdict['price']
+        dict[key]=price
+    cheapest=99999999
+    cheapestHotel=""
+    for key in dict:
+        if int(dict[key])<cheapest:
+            cheapestHotel=key
+            cheapest=int(dict[key])
+    res=(cheapestHotel,cheapest)
+    return res
+
+#finds the best hotel in budget returns('hotel name', price)
+def bestHotel(destination,checkIn,checkOut,budget):
+    data=hotelData(destination,checkIn,checkOut) 
+    dict={}
+    bestHotel=""
+    finalPrice=0
+    for key in data:
+        subdict=data[key]
+        price=subdict['price']
+        if price<=budget:
+            dict[key]=price
+    mostStars=0
+    for key in dict:
+        subdictTwo=data[key]
+        stars=subdictTwo["stars"]
+        priceTwo=subdictTwo["price"]
+        if stars>=mostStars:
+            bestHotel=key
+            mostStars=stars
+            finalPrice=priceTwo
+    res=(bestHotel,finalPrice)
+    return res
